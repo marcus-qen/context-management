@@ -1,5 +1,6 @@
 ---
 name: context-management
+version: 1.0.0
 description: >
   Manage AI agent context window consumption, prevent compaction death spirals,
   and enforce sub-agent spawn policies. Use when: (1) context is filling up and
@@ -142,33 +143,61 @@ Run `session_status`. Count approximate tool calls and message exchanges. Classi
 
 ### Step 2: Recommend Config
 
-| Pattern | reserveTokensFloor | pruning TTL | keepLastAssistants | Rationale |
-|---------|-------------------|-------------|-------------------|-----------|
-| Tool-heavy | `60000` | `1m` | `1` | Compact early, prune aggressively — tool output is disposable |
-| Conversational | `30000` | `5m` | `3` | Protect conversation history, less pruning needed |
-| Mixed | `50000` | `2m` | `2` | Balance: reasonable headroom + moderate pruning |
-| Bursty | `50000` | `2m` | `1` | Prune burst results fast, keep headroom for next burst |
+There are four settings that matter. When explaining them to the user, always describe **what they do in practice**, not just the setting name:
 
-Also recommend:
-- **Tool-heavy sessions**: Lower `minPrunableToolChars` to `10000` to catch medium outputs
-- **Sessions with browser/canvas work**: Ensure those tools are in `tools.deny` list
-- **Long-running sessions (>2h)**: Higher floor (`60000`) to survive multiple compactions
+**1. When to compress the conversation** (`reserveTokensFloor`)
+How full the context gets before the agent summarises and compresses the history. A higher number means it compresses sooner — producing a shorter summary with more room left afterwards.
+- `30000` — waits until nearly full. Risk: huge summary, little room after.
+- `50000` — compresses at ~75% full. Good balance.
+- `60000` — compresses early at ~70%. Maximum breathing room.
+
+**2. How quickly old tool output is cleared** (`pruning TTL`)
+After you stop talking for this long, the agent clears old command outputs, file reads, and search results from memory. Shorter = more aggressive cleanup.
+- `5m` — only clears after 5 minutes of silence. Rarely fires during active work.
+- `2m` — clears after 2 minutes. Good for most workflows.
+- `1m` — aggressive. Clears fast, but you might need to re-read files.
+
+**3. How many recent exchanges are protected from cleanup** (`keepLastAssistants`)
+When clearing old tool output, this many of your most recent back-and-forth exchanges are kept untouched.
+- `3` — keeps more history visible. Good for conversations.
+- `2` — moderate protection.
+- `1` — only the last exchange is safe. Most aggressive cleanup.
+
+**4. Minimum size before tool output gets trimmed** (`minPrunableToolChars`)
+Only tool results larger than this (in characters) are eligible for trimming. Lower = more things get cleaned up.
+- `50000` (default) — only trims very large outputs (long file reads, huge command output).
+- `10000` — also trims medium outputs. Catches more.
+- `5000` — aggressive. Most tool results are eligible.
+
+**Recommended combinations by work style:**
+
+| Work style | Compress at | Clear after | Protect | Trim above | 
+|------------|------------|-------------|---------|------------|
+| Tool-heavy (audits, tests, debugging) | `60000` | `1m` | `1` | `10000` |
+| Conversational (planning, discussion) | `30000` | `5m` | `3` | `50000` |
+| Mixed (code → test → discuss) | `50000` | `2m` | `2` | `10000` |
+| Bursty (monitoring + incidents) | `50000` | `2m` | `1` | `10000` |
+
+Additional tips:
+- **Sessions with browser/canvas work**: Ensure those tools are protected from cleanup in the config
+- **Long-running sessions (>2h)**: Use a higher compression trigger to survive multiple rounds
 
 ### Step 3: Report
 
-Format recommendation as:
+Format recommendation in plain language:
 
 ```
 📊 Session Profile: {pattern}
   Context: {pct}% ({used}k/{total}k)
-  Tool calls: ~{n} | Messages: ~{m} | Compactions: {c}
+  Tool calls: ~{n} | Messages: ~{m} | Compressions so far: {c}
 
-  Recommended config for this work style:
-    reserveTokensFloor: {value} (current: {current})
-    pruning TTL: {value} (current: {current})
-    keepLastAssistants: {value} (current: {current})
+  Recommended settings for this work style:
+    When to compress: {value} (currently: {current}) — {what this means}
+    Clear old output after: {value} (currently: {current}) — {what this means}
+    Protect last: {value} exchanges (currently: {current})
+    Trim output above: {value} chars (currently: {current})
 
-  {specific_advice}
+  {specific_advice in plain language}
 ```
 
 If the user agrees, apply changes following the procedure below.
