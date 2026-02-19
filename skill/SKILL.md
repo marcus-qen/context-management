@@ -187,7 +187,7 @@ Additional tips:
 Use a compact list format — tables render poorly on mobile and narrow chat windows. For each setting, show current vs recommended only if they differ. Skip settings that are already correct.
 
 ```
-📊 Session Profile: {pattern}
+📊 Current Session Profile: {pattern}
 Context: {pct}% ({used}k/{total}k) · Compressions: {c}
 
 ✅ When to compress — {current_description}. Good for this work style.
