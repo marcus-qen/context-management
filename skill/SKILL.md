@@ -16,12 +16,12 @@ Prevent context exhaustion, enforce spawn discipline, and make compaction surviv
 
 ## Core Concepts
 
-1. **Fixed baseline**: ~8% of context consumed before any conversation — system prompt, workspace files, skill descriptions, tool definitions. Actual size depends on workspace and skill count.
+1. **Fixed baseline**: Typically 5-15% of context consumed before any conversation — system prompt, workspace files, skill descriptions, tool definitions. Varies by setup (more skills/files = higher baseline).
 2. **60/40 rule**: ~60% of consumed context is tool outputs, ~40% conversation. Tool outputs are the primary target for savings.
 3. **Compaction is lossy**: Summaries stack cumulatively. Each cycle raises the floor. After 3+ compactions, summaries alone can consume 30%+ of context.
 4. **Sub-agents are disposable context**: A sub-agent can burn most of its context investigating something; only the summary (~500 tokens) enters main context.
 
-Note: All percentages are relative to the model's context window (e.g. 200k for Claude Opus, 128k for GPT-4, etc.). Check `session_status` for the actual window size.
+All percentages are relative to the model's context window. Check `session_status` for actual window size and usage.
 
 ## Procedures
 
@@ -40,14 +40,14 @@ After every tool-heavy operation (>5 tool calls), assess:
 Cannot get exact per-component breakdown. Estimate:
 
 ```
-Fixed baseline:         ~8% (system prompt + workspace files + skills + tools)
+Fixed baseline:         ~5-15% (system prompt + workspace files + skills + tools)
 Per user message:       ~100-500 tokens each
 Per assistant response: ~200-1000 tokens each
 Per tool call result:   ~500-5000 tokens each (exec/read heavy, search light)
 Compaction summaries:   ~2000-5000 tokens each (cumulative!)
 ```
 
-Count messages and tool calls in recent history, multiply by midpoint estimates. Report as ranges, not false precision.
+Count messages and tool calls in recent history, multiply by midpoint estimates. Report as ranges, not false precision. For per-operation cost detail, read `references/operation-costs.md`.
 
 ### Spawn Policy
 
@@ -75,7 +75,7 @@ When spawning, write detailed task descriptions. Sub-agents have no conversation
 
 ### Pre-Compaction Checkpoint
 
-Before compaction or `/new`, write `.context-checkpoint.md` in the **workspace root** (the agent needs to read this post-compaction — it must be where the agent can find it):
+Before compaction or `/new`, write `.context-checkpoint.md` in the **workspace root** (the agent reads this post-compaction):
 
 ```markdown
 # Context Checkpoint — {date} {time}
@@ -98,16 +98,16 @@ Before compaction or `/new`, write `.context-checkpoint.md` in the **workspace r
 
 This file survives compaction. On session start or post-compaction, check for it and use it to restore context. Delete after consuming.
 
-**Coordination with OpenClaw memoryFlush:** OpenClaw may fire its own pre-compaction flush (writing to daily log). The checkpoint is complementary — the flush saves to the daily log, the checkpoint saves structured resume state. Both should exist. If the memoryFlush fires first, the checkpoint may not get written (compaction already in progress). For critical sessions, write checkpoints proactively at 75%, don't wait for 85%.
+**Coordination with OpenClaw memoryFlush:** OpenClaw may fire its own pre-compaction flush (writing to daily log). The checkpoint is complementary — the flush saves to the daily log, the checkpoint saves structured resume state. Both should exist. If the memoryFlush fires first, compaction may already be in progress. For critical sessions, write checkpoints proactively at 75%, don't wait for 85%.
 
-The `scripts/context-checkpoint.sh` script handles basic write/read/clear operations. For the full 5-section checkpoint, write the file directly — the script only covers task, state, and next steps.
+The `scripts/context-checkpoint.sh` script handles basic write/read/clear. For the full 5-section checkpoint, write the file directly — multiline content works better that way.
 
 ### Post-Compaction Recovery
 
 After compaction or `/new`:
 
 1. Read `.context-checkpoint.md` if it exists
-2. Read `memory/{today}.md` for recent log entries
+2. Read today's daily log if the workspace has one (e.g. `memory/{today}.md`)
 3. Resume from the checkpoint's "Next Steps"
 4. Delete the checkpoint file after restoring context
 
@@ -175,20 +175,24 @@ If the user agrees, apply changes following the procedure below.
 
 ### Step 4: Learn Over Time
 
-After giving advice, note the session pattern and outcome in the daily log. Over multiple sessions, patterns emerge — the user's _typical_ work style becomes clear and default config can be permanently tuned.
+After giving advice, note the session pattern and outcome in the daily log (if the workspace keeps one). Over multiple sessions, patterns emerge — the user's typical work style becomes clear and default config can be permanently tuned.
 
 ## Applying Config Changes — Mandatory Procedure
 
 When recommending config changes, follow this exact sequence. No shortcuts.
 
-### 1. Backup First
+### 1. Find the Config File
+
+Run `gateway config.get` to get the config file path and current values. Do not assume the path — it varies by installation.
+
+### 2. Backup First
 ```bash
-cp /home/openclaw/.openclaw/openclaw.json \
-   /home/openclaw/.openclaw/openclaw.json.backup-$(date +%Y%m%d-%H%M%S)
+cp <config_path> <config_path>.backup-$(date +%Y%m%d-%H%M%S)
 ```
 
-### 2. Write a Rollback Document
-Create `/tmp/rollback-context-config.md` — NOT the workspace (user may not have access to the agent's workspace). `/tmp/` is universally accessible. The file survives long enough for rollback; if the machine reboots, the backup config file next to `openclaw.json` is the real safety net. Include:
+### 3. Write a Rollback Document
+
+Write a rollback doc to a location the **user** can access (not the agent workspace — the user may not have access to it). Use a temp directory (`/tmp/` on Linux/macOS, or the system temp dir). Include:
 
 ```markdown
 # Context Config Rollback — {date}
@@ -196,55 +200,57 @@ Create `/tmp/rollback-context-config.md` — NOT the workspace (user may not hav
 ## What Changed
 | Setting | Before | After | File |
 |---------|--------|-------|------|
-| ... | ... | ... | /home/openclaw/.openclaw/openclaw.json |
+| {setting} | {old} | {new} | {config_path} |
 
 ## Backup Location
-/home/openclaw/.openclaw/openclaw.json.backup-{timestamp}
+{config_path}.backup-{timestamp}
 
 ## How to Rollback
-cp {backup_path} /home/openclaw/.openclaw/openclaw.json
+cp {backup_path} {config_path}
 
 ## How to Restart the Gateway
 Depends on local setup — check which applies:
-- systemd: sudo systemctl restart openclaw-gateway
-- CLI: openclaw gateway restart
-- Manual process: pkill -f "openclaw gateway" && openclaw gateway start
+- CLI (most common): openclaw gateway restart
+- systemd service: sudo systemctl restart <service-name>
+- Manual process: kill the gateway process, then: openclaw gateway start
 
 ## How to Check Health
-curl -sf http://localhost:{port}/health && echo "OK" || echo "DOWN"
-pgrep -af openclaw
+- Process running: check for openclaw in process list
+- Gateway responding: curl http://localhost:<port>/health
+- Logs: check system logs or terminal output depending on setup
 
 ## What to Do If Gateway Won't Start
 1. Restore backup (cp command above)
 2. Restart gateway
-3. Check logs: journalctl -u openclaw-gateway --since "5 min ago"
+3. Check logs for config parse errors
 ```
 
-### 3. Explain to the User BEFORE Applying
+Tell the user where this file is.
+
+### 4. Explain to the User BEFORE Applying
 Tell them:
-- **Which file** is being modified (full path)
+- **Which file** is being modified (full path — get it from `gateway config.get`)
 - **What values** change (before → after table)
-- **What "restart" means** — the OpenClaw gateway process restarts (not the machine, not Kubernetes, not SSH). Brief 2-3 second pause, then the session reconnects automatically.
+- **What "restart" means** — the OpenClaw gateway process restarts (not the machine, not any other service). Brief 2-3 second pause, then the session reconnects automatically.
 - **Where the backup is** (full path)
 - **Where the rollback doc is** (full path)
 - **How to check** if something goes wrong
 
-### 4. Apply with gateway config.patch
+### 5. Apply with gateway config.patch
 Use the `gateway` tool with `action: config.patch`. Include a clear `note` parameter — this message is delivered to the user after the gateway restarts.
 
-### 5. Post-Restart Confirmation (MANDATORY)
+### 6. Post-Restart Confirmation (MANDATORY)
 After the gateway restarts and the session reconnects, **immediately confirm to the user**:
 
 ```
 ✅ Gateway is back. Config changes applied successfully.
 
 What changed:
-- Compaction trigger: {old} → {new} (compacts earlier, smaller summaries)
-- Pruning TTL: {old} → {new} (clears stale tool output sooner)
+- {setting}: {old} → {new} ({plain English explanation})
 - [etc.]
 
-Rollback doc: /tmp/rollback-context-config.md
-Backup: /home/openclaw/.openclaw/openclaw.json.backup-{timestamp}
+Rollback doc: {path}
+Backup: {path}
 
 Everything is working normally. Ready to continue.
 ```

@@ -1,9 +1,11 @@
 # OpenClaw Context Configuration Guide
 
+All settings live in the OpenClaw config file. Run `gateway config.get` to find its path and current values.
+
 ## Compaction Settings
 
 ```json5
-// gateway config → agents.defaults.compaction
+// config path: agents.defaults.compaction
 {
   mode: "safeguard",           // Chunked summarisation — recommended
   reserveTokensFloor: 20000,   // Compact when this many tokens remain free
@@ -14,15 +16,18 @@
 }
 ```
 
-**`reserveTokensFloor`** is the most impactful setting (values assume 200k context):
+**`reserveTokensFloor`** is the most impactful setting.
+Example for a 200k context window:
 - `20000` (OpenClaw default): compaction at 90% — late, big summaries, death spiral risk
 - `50000` (recommended): compaction at 75% — earlier, smaller summaries
 - `60000` (aggressive): compaction at 70% — maximum headroom
 
+Scale these values relative to your model's context window. The principle: higher floor = earlier compaction = smaller summaries = more headroom after.
+
 ## Pruning Settings
 
 ```json5
-// gateway config → agents.defaults.contextPruning
+// config path: agents.defaults.contextPruning
 {
   mode: "cache-ttl",           // Prune when cache TTL expires
   ttl: "5m",                   // Time since last API call before pruning
@@ -38,7 +43,7 @@
     placeholder: "[Old tool result content cleared]"
   },
   tools: {
-    deny: ["browser", "canvas"]  // Never prune these
+    deny: ["browser", "canvas"]  // Never prune these tools' results
   }
 }
 ```
@@ -50,13 +55,13 @@
 
 ## Recommended Profiles
 
-### Conservative (minimal intervention)
+### Conservative (OpenClaw defaults, minimal intervention)
 ```json5
 { reserveTokensFloor: 20000, ttl: "5m", keepLastAssistants: 2 }
 ```
 Late compaction, large summaries. Risk: death spiral after 3+ compactions.
 
-### Balanced (recommended)
+### Balanced (recommended for most users)
 ```json5
 { reserveTokensFloor: 50000, ttl: "2m", keepLastAssistants: 1, minPrunableToolChars: 10000 }
 ```
@@ -78,7 +83,7 @@ gateway config.patch with the JSON values to merge
 From the command line:
 ```bash
 # Edit the config file directly, then restart
-nano /home/openclaw/.openclaw/openclaw.json
+nano <config_path>    # path from: gateway config.get
 openclaw gateway restart
 ```
 
