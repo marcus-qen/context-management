@@ -200,19 +200,26 @@ Estimated runway: ~{time_or_calls} before next compression.
 
 Lead with what's already right (builds confidence), then highlight what needs changing and why. Keep it short — the user wants a verdict, not a lecture.
 
-If changes are recommended, tell the user up front what applying them involves:
-- How many settings change
-- That it requires a gateway restart (~2-3 second pause, auto-reconnects)
-- That a backup and rollback doc will be created first
+If changes are recommended, tell the user **everything** up front before asking for approval:
+1. **Exact file** being modified (full path — get from `gateway config.get`)
+2. **Exact changes** — setting name, current value, new value
+3. **What happens** — gateway restart (~2-3 second pause, auto-reconnects)
+4. **Safety net** — backup taken first, rollback doc written to temp directory
 
 Example closing:
 ```
-One change recommended. Applying it means: backup of the config file, 
-a gateway restart (~2-3 second pause while it reloads), and a rollback 
-doc written to /tmp in case you want to undo it. Want me to go ahead?
+One change recommended:
+  File: {config_path}
+  Change: {setting_name}: {old_value} → {new_value}
+  
+Applying means: I'll back up the config file first, write a rollback 
+doc to {temp_path}, then restart the OpenClaw gateway (~2-3 second 
+pause while it reloads). Want me to go ahead?
 ```
 
-Never ask "want me to apply?" without explaining what "apply" means. The user decides with full information, not blind trust.
+For multiple changes, list each one. Never summarise as "4 changes" — spell them out.
+
+Never ask "want me to apply?" without the user seeing the exact file, exact values, and exact consequences. The user decides with full information, not blind trust.
 
 If the user agrees, follow the full procedure below.
 
