@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # context-checkpoint.sh — Write or read context checkpoint files
 # Usage:
-#   context-checkpoint.sh write <workspace_root> [task] [state] [next_steps]
+#   context-checkpoint.sh write <workspace_root> [task] [state] [decisions] [files_changed] [next_steps]
 #   context-checkpoint.sh read  <workspace_root>
 #   context-checkpoint.sh clear <workspace_root>
 set -euo pipefail
@@ -14,7 +14,9 @@ case "$ACTION" in
   write)
     TASK="${3:-No active task described}"
     STATE="${4:-No state captured}"
-    NEXT="${5:-No next steps defined}"
+    DECISIONS="${5:-None recorded}"
+    FILES="${6:-None recorded}"
+    NEXT="${7:-No next steps defined}"
     DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
 
     cat > "$CHECKPOINT" <<EOF
@@ -25,6 +27,12 @@ $TASK
 
 ## Key State
 $STATE
+
+## Decisions Made This Session
+$DECISIONS
+
+## Files Changed
+$FILES
 
 ## Next Steps
 $NEXT
@@ -51,12 +59,15 @@ EOF
     ;;
 
   help|--help|-h)
-    echo "Usage: context-checkpoint.sh {write|read|clear} <workspace_root> [task] [state] [next_steps]"
+    echo "Usage: context-checkpoint.sh {write|read|clear} <workspace_root> [task] [state] [decisions] [files_changed] [next_steps]"
     echo ""
     echo "Actions:"
     echo "  write  Write a checkpoint file before compaction or /new"
     echo "  read   Read existing checkpoint (for post-compaction recovery)"
     echo "  clear  Remove checkpoint after consuming it"
+    echo ""
+    echo "For complex content, write the checkpoint file directly instead of"
+    echo "using this script — multiline content doesn't work well as arguments."
     ;;
 
   *)

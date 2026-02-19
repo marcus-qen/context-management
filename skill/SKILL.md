@@ -16,10 +16,12 @@ Prevent context exhaustion, enforce spawn discipline, and make compaction surviv
 
 ## Core Concepts
 
-1. **Fixed baseline**: ~16k tokens (8%) consumed before any conversation — system prompt, workspace files, skill descriptions, tool definitions
-2. **60/40 rule**: ~60% of context consumed by tool outputs, ~40% by conversation. Tool outputs are the primary target for savings.
+1. **Fixed baseline**: ~8% of context consumed before any conversation — system prompt, workspace files, skill descriptions, tool definitions. Actual size depends on workspace and skill count.
+2. **60/40 rule**: ~60% of consumed context is tool outputs, ~40% conversation. Tool outputs are the primary target for savings.
 3. **Compaction is lossy**: Summaries stack cumulatively. Each cycle raises the floor. After 3+ compactions, summaries alone can consume 30%+ of context.
-4. **Sub-agents are disposable context**: A sub-agent can burn 150k tokens investigating something; only the summary (~500 tokens) enters main context.
+4. **Sub-agents are disposable context**: A sub-agent can burn most of its context investigating something; only the summary (~500 tokens) enters main context.
+
+Note: All percentages are relative to the model's context window (e.g. 200k for Claude Opus, 128k for GPT-4, etc.). Check `session_status` for the actual window size.
 
 ## Procedures
 
@@ -38,9 +40,9 @@ After every tool-heavy operation (>5 tool calls), assess:
 Cannot get exact per-component breakdown. Estimate:
 
 ```
-Fixed baseline:         ~16k tokens (8%)
+Fixed baseline:         ~8% (system prompt + workspace files + skills + tools)
 Per user message:       ~100-500 tokens each
-Per assistant response: ~200-1000 tokens each  
+Per assistant response: ~200-1000 tokens each
 Per tool call result:   ~500-5000 tokens each (exec/read heavy, search light)
 Compaction summaries:   ~2000-5000 tokens each (cumulative!)
 ```
@@ -49,11 +51,11 @@ Count messages and tool calls in recent history, multiply by midpoint estimates.
 
 ### Spawn Policy
 
-Read `.context-policy.yml` from workspace root if it exists. Otherwise use defaults:
+If `.context-policy.yml` exists in workspace root, use it as guidance for spawn thresholds and task categories. Otherwise use these defaults:
 
 **Always spawn** (regardless of context level):
 - Test suites (>3 tests)
-- Multi-file audits (>5 files)  
+- Multi-file audits (>5 files)
 - Build/deploy pipelines
 - Research tasks (web search + analysis)
 - Bulk file operations
@@ -73,7 +75,7 @@ When spawning, write detailed task descriptions. Sub-agents have no conversation
 
 ### Pre-Compaction Checkpoint
 
-Before compaction or `/new`, write `.context-checkpoint.md` in workspace root:
+Before compaction or `/new`, write `.context-checkpoint.md` in the **workspace root** (the agent needs to read this post-compaction — it must be where the agent can find it):
 
 ```markdown
 # Context Checkpoint — {date} {time}
@@ -96,6 +98,10 @@ Before compaction or `/new`, write `.context-checkpoint.md` in workspace root:
 
 This file survives compaction. On session start or post-compaction, check for it and use it to restore context. Delete after consuming.
 
+**Coordination with OpenClaw memoryFlush:** OpenClaw may fire its own pre-compaction flush (writing to daily log). The checkpoint is complementary — the flush saves to the daily log, the checkpoint saves structured resume state. Both should exist. If the memoryFlush fires first, the checkpoint may not get written (compaction already in progress). For critical sessions, write checkpoints proactively at 75%, don't wait for 85%.
+
+The `scripts/context-checkpoint.sh` script handles basic write/read/clear operations. For the full 5-section checkpoint, write the file directly — the script only covers task, state, and next steps.
+
 ### Post-Compaction Recovery
 
 After compaction or `/new`:
@@ -110,7 +116,7 @@ After compaction or `/new`:
 When context exceeds 65%, warn:
 
 ```
-⚠️ Context: {pct}% ({used}k/{total}k). Estimated runway: ~{remaining_calls} 
+⚠️ Context: {pct}% ({used}k/{total}k). Estimated runway: ~{remaining_calls}
 tool calls. {recommendation}
 ```
 
@@ -129,8 +135,8 @@ Run `session_status`. Count approximate tool calls and message exchanges. Classi
 
 | Pattern | Signature | Example |
 |---------|-----------|---------|
-| **Tool-heavy** | >70% of context from tool results, many exec/read/web calls | Audits, migrations, test suites, debugging |
-| **Conversational** | >60% from messages, few tool calls | Planning, discussion, decisions |
+| **Tool-heavy** | Most context from tool results, many exec/read/web calls | Audits, migrations, test suites, debugging |
+| **Conversational** | Most context from messages, few tool calls | Planning, discussion, decisions |
 | **Mixed** | Roughly even split | Feature builds (discuss → code → test → discuss) |
 | **Bursty** | Long quiet periods with intense tool bursts | Monitoring + incident response |
 
@@ -156,16 +162,16 @@ Format recommendation as:
 📊 Session Profile: {pattern}
   Context: {pct}% ({used}k/{total}k)
   Tool calls: ~{n} | Messages: ~{m} | Compactions: {c}
-  
+
   Recommended config for this work style:
     reserveTokensFloor: {value} (current: {current})
     pruning TTL: {value} (current: {current})
     keepLastAssistants: {value} (current: {current})
-  
+
   {specific_advice}
 ```
 
-If the user agrees, apply changes via `gateway config.patch`.
+If the user agrees, apply changes following the procedure below.
 
 ### Step 4: Learn Over Time
 
@@ -182,7 +188,7 @@ cp /home/openclaw/.openclaw/openclaw.json \
 ```
 
 ### 2. Write a Rollback Document
-Create `/tmp/rollback-context-config.md` (not the workspace — the user may not have access to the agent's workspace). `/tmp/` is universally accessible. The file survives long enough for rollback purposes — if the machine reboots, the backup config file is the real safety net anyway. Include:
+Create `/tmp/rollback-context-config.md` — NOT the workspace (user may not have access to the agent's workspace). `/tmp/` is universally accessible. The file survives long enough for rollback; if the machine reboots, the backup config file next to `openclaw.json` is the real safety net. Include:
 
 ```markdown
 # Context Config Rollback — {date}
@@ -218,13 +224,13 @@ pgrep -af openclaw
 Tell them:
 - **Which file** is being modified (full path)
 - **What values** change (before → after table)
-- **What "restart" means** — the OpenClaw gateway process restarts (not the machine, not Kubernetes, not SSH). Brief 2-3 second pause.
+- **What "restart" means** — the OpenClaw gateway process restarts (not the machine, not Kubernetes, not SSH). Brief 2-3 second pause, then the session reconnects automatically.
 - **Where the backup is** (full path)
 - **Where the rollback doc is** (full path)
 - **How to check** if something goes wrong
 
-### 4. Apply with config.patch
-Use the `gateway config.patch` tool. Include a clear `note` parameter — this is what the user sees after restart.
+### 4. Apply with gateway config.patch
+Use the `gateway` tool with `action: config.patch`. Include a clear `note` parameter — this message is delivered to the user after the gateway restarts.
 
 ### 5. Post-Restart Confirmation (MANDATORY)
 After the gateway restarts and the session reconnects, **immediately confirm to the user**:
@@ -237,8 +243,8 @@ What changed:
 - Pruning TTL: {old} → {new} (clears stale tool output sooner)
 - [etc.]
 
-Rollback doc: {path}
-Backup: {path}
+Rollback doc: /tmp/rollback-context-config.md
+Backup: /home/openclaw/.openclaw/openclaw.json.backup-{timestamp}
 
 Everything is working normally. Ready to continue.
 ```
@@ -249,10 +255,7 @@ Everything is working normally. Ready to continue.
 3. Where to find the rollback doc
 4. That we're ready to continue
 
-## OpenClaw Config Tuning
+## Reference Docs
 
-For detailed config options and profiles, read `references/config-guide.md`.
-
-## Operation Cost Reference
-
-For per-operation cost estimates, read `references/operation-costs.md`.
+For detailed config options and profiles: `references/config-guide.md`
+For per-operation cost estimates: `references/operation-costs.md`

@@ -14,8 +14,8 @@
 }
 ```
 
-**`reserveTokensFloor`** is the most impactful setting:
-- `20000` (default): compaction at 90% — late, big summaries, death spiral risk
+**`reserveTokensFloor`** is the most impactful setting (values assume 200k context):
+- `20000` (OpenClaw default): compaction at 90% — late, big summaries, death spiral risk
 - `50000` (recommended): compaction at 75% — earlier, smaller summaries
 - `60000` (aggressive): compaction at 70% — maximum headroom
 
@@ -70,9 +70,16 @@ Maximum headroom. May need to re-read files after pruning clears them.
 
 ## Applying Changes
 
-Use OpenClaw gateway config:
+From within a session, use the `gateway` tool:
+```
+gateway config.patch with the JSON values to merge
+```
+
+From the command line:
 ```bash
-openclaw config set agents.defaults.compaction.reserveTokensFloor 50000
+# Edit the config file directly, then restart
+nano /home/openclaw/.openclaw/openclaw.json
 openclaw gateway restart
 ```
-Or use the `gateway` tool with `config.patch` action.
+
+Always follow the full backup → rollback doc → explain → apply → confirm procedure in SKILL.md.

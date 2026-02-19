@@ -1,4 +1,4 @@
-# Token Cost Reference
+# Operation Cost Reference
 
 Estimates from production measurements (Claude Opus, 200k context). Use chars/4 approximation.
 
