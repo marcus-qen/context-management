@@ -1,0 +1,41 @@
+# .context-policy.yml — Context management policy
+# Place in workspace root. The context-management skill reads this.
+
+spawn_policy:
+  # Always spawn sub-agents for these task types
+  always_spawn:
+    - test_suites        # >3 tests
+    - multi_file_audits  # >5 files
+    - build_pipelines    # CI/CD, image builds
+    - research_tasks     # web search + analysis
+    - bulk_operations    # mass file edits, migrations
+
+  # Context-dependent spawn thresholds
+  context_thresholds:
+    - above: 50    # percent
+      spawn_if: ">5 tool calls estimated"
+    - above: 70
+      spawn_if: ">2 tool calls estimated"
+    - above: 85
+      action: "write checkpoint, suggest /compact or /new"
+
+  # Never spawn (keep interactive in main session)
+  never_spawn:
+    - single_commands
+    - conversations
+    - quick_edits      # 1-3 files
+    - status_checks
+    - user_input_needed
+
+# Checkpoint settings
+checkpoint:
+  # Write checkpoint automatically before compaction
+  auto_checkpoint: true
+  # Where to write the checkpoint
+  path: ".context-checkpoint.md"
+
+# Warning thresholds (percent of context window)
+warnings:
+  info: 50     # First mention of context pressure
+  warn: 65     # Active recommendation to spawn
+  critical: 85 # Suggest compact/new

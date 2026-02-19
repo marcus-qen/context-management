@@ -1,0 +1,78 @@
+# OpenClaw Context Configuration Guide
+
+## Compaction Settings
+
+```json5
+// gateway config → agents.defaults.compaction
+{
+  mode: "safeguard",           // Chunked summarisation — recommended
+  reserveTokensFloor: 20000,   // Compact when this many tokens remain free
+  memoryFlush: {
+    enabled: true,              // Save state to disk before compaction
+    softThresholdTokens: 10000  // Start flush this far from limit
+  }
+}
+```
+
+**`reserveTokensFloor`** is the most impactful setting:
+- `20000` (default): compaction at 90% — late, big summaries, death spiral risk
+- `50000` (recommended): compaction at 75% — earlier, smaller summaries
+- `60000` (aggressive): compaction at 70% — maximum headroom
+
+## Pruning Settings
+
+```json5
+// gateway config → agents.defaults.contextPruning
+{
+  mode: "cache-ttl",           // Prune when cache TTL expires
+  ttl: "5m",                   // Time since last API call before pruning
+  keepLastAssistants: 2,       // Protect this many recent exchanges
+  minPrunableToolChars: 50000, // Only trim results larger than this
+  softTrim: {
+    maxChars: 4000,            // Max trimmed output size
+    headChars: 1500,           // Keep from start
+    tailChars: 1500            // Keep from end
+  },
+  hardClear: {
+    enabled: true,
+    placeholder: "[Old tool result content cleared]"
+  },
+  tools: {
+    deny: ["browser", "canvas"]  // Never prune these
+  }
+}
+```
+
+**Key tuning points:**
+- `keepLastAssistants: 1` — most aggressive, only last exchange is safe
+- `minPrunableToolChars: 10000` — catches medium results (default 50000 only catches huge ones)
+- `ttl: "2m"` — prunes after shorter pauses (default 5m rarely fires during active work)
+
+## Recommended Profiles
+
+### Conservative (minimal intervention)
+```json5
+{ reserveTokensFloor: 20000, ttl: "5m", keepLastAssistants: 2 }
+```
+Late compaction, large summaries. Risk: death spiral after 3+ compactions.
+
+### Balanced (recommended)
+```json5
+{ reserveTokensFloor: 50000, ttl: "2m", keepLastAssistants: 1, minPrunableToolChars: 10000 }
+```
+Earlier compaction, more aggressive pruning. Good for mixed workloads.
+
+### Aggressive (heavy tool users)
+```json5
+{ reserveTokensFloor: 60000, ttl: "1m", keepLastAssistants: 1, minPrunableToolChars: 5000 }
+```
+Maximum headroom. May need to re-read files after pruning clears them.
+
+## Applying Changes
+
+Use OpenClaw gateway config:
+```bash
+openclaw config set agents.defaults.compaction.reserveTokensFloor 50000
+openclaw gateway restart
+```
+Or use the `gateway` tool with `config.patch` action.
