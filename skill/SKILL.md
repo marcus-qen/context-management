@@ -182,7 +182,7 @@ cp /home/openclaw/.openclaw/openclaw.json \
 ```
 
 ### 2. Write a Rollback Document
-Create `<workspace>/rollback-context-config.md` on disk (not just screen output — screen vanishes after compaction). Include:
+Create `/tmp/rollback-context-config.md` (not the workspace — the user may not have access to the agent's workspace). `/tmp/` is universally accessible. The file survives long enough for rollback purposes — if the machine reboots, the backup config file is the real safety net anyway. Include:
 
 ```markdown
 # Context Config Rollback — {date}
