@@ -119,9 +119,139 @@ Recommendations by level:
 - 75%: "Recommend compacting soon. Writing checkpoint."
 - 85%: "Context critical. Writing checkpoint now. Suggest `/compact` or `/new`."
 
+## Session Profiling & Config Advice
+
+After significant work (or on request), profile the current session and recommend config changes.
+
+### Step 1: Classify the Session Pattern
+
+Run `session_status`. Count approximate tool calls and message exchanges. Classify:
+
+| Pattern | Signature | Example |
+|---------|-----------|---------|
+| **Tool-heavy** | >70% of context from tool results, many exec/read/web calls | Audits, migrations, test suites, debugging |
+| **Conversational** | >60% from messages, few tool calls | Planning, discussion, decisions |
+| **Mixed** | Roughly even split | Feature builds (discuss → code → test → discuss) |
+| **Bursty** | Long quiet periods with intense tool bursts | Monitoring + incident response |
+
+### Step 2: Recommend Config
+
+| Pattern | reserveTokensFloor | pruning TTL | keepLastAssistants | Rationale |
+|---------|-------------------|-------------|-------------------|-----------|
+| Tool-heavy | `60000` | `1m` | `1` | Compact early, prune aggressively — tool output is disposable |
+| Conversational | `30000` | `5m` | `3` | Protect conversation history, less pruning needed |
+| Mixed | `50000` | `2m` | `2` | Balance: reasonable headroom + moderate pruning |
+| Bursty | `50000` | `2m` | `1` | Prune burst results fast, keep headroom for next burst |
+
+Also recommend:
+- **Tool-heavy sessions**: Lower `minPrunableToolChars` to `10000` to catch medium outputs
+- **Sessions with browser/canvas work**: Ensure those tools are in `tools.deny` list
+- **Long-running sessions (>2h)**: Higher floor (`60000`) to survive multiple compactions
+
+### Step 3: Report
+
+Format recommendation as:
+
+```
+📊 Session Profile: {pattern}
+  Context: {pct}% ({used}k/{total}k)
+  Tool calls: ~{n} | Messages: ~{m} | Compactions: {c}
+  
+  Recommended config for this work style:
+    reserveTokensFloor: {value} (current: {current})
+    pruning TTL: {value} (current: {current})
+    keepLastAssistants: {value} (current: {current})
+  
+  {specific_advice}
+```
+
+If the user agrees, apply changes via `gateway config.patch`.
+
+### Step 4: Learn Over Time
+
+After giving advice, note the session pattern and outcome in the daily log. Over multiple sessions, patterns emerge — the user's _typical_ work style becomes clear and default config can be permanently tuned.
+
+## Applying Config Changes — Mandatory Procedure
+
+When recommending config changes, follow this exact sequence. No shortcuts.
+
+### 1. Backup First
+```bash
+cp /home/openclaw/.openclaw/openclaw.json \
+   /home/openclaw/.openclaw/openclaw.json.backup-$(date +%Y%m%d-%H%M%S)
+```
+
+### 2. Write a Rollback Document
+Create `<workspace>/rollback-context-config.md` on disk (not just screen output — screen vanishes after compaction). Include:
+
+```markdown
+# Context Config Rollback — {date}
+
+## What Changed
+| Setting | Before | After | File |
+|---------|--------|-------|------|
+| ... | ... | ... | /home/openclaw/.openclaw/openclaw.json |
+
+## Backup Location
+/home/openclaw/.openclaw/openclaw.json.backup-{timestamp}
+
+## How to Rollback
+cp {backup_path} /home/openclaw/.openclaw/openclaw.json
+
+## How to Restart the Gateway
+Depends on local setup — check which applies:
+- systemd: sudo systemctl restart openclaw-gateway
+- CLI: openclaw gateway restart
+- Manual process: pkill -f "openclaw gateway" && openclaw gateway start
+
+## How to Check Health
+curl -sf http://localhost:{port}/health && echo "OK" || echo "DOWN"
+pgrep -af openclaw
+
+## What to Do If Gateway Won't Start
+1. Restore backup (cp command above)
+2. Restart gateway
+3. Check logs: journalctl -u openclaw-gateway --since "5 min ago"
+```
+
+### 3. Explain to the User BEFORE Applying
+Tell them:
+- **Which file** is being modified (full path)
+- **What values** change (before → after table)
+- **What "restart" means** — the OpenClaw gateway process restarts (not the machine, not Kubernetes, not SSH). Brief 2-3 second pause.
+- **Where the backup is** (full path)
+- **Where the rollback doc is** (full path)
+- **How to check** if something goes wrong
+
+### 4. Apply with config.patch
+Use the `gateway config.patch` tool. Include a clear `note` parameter — this is what the user sees after restart.
+
+### 5. Post-Restart Confirmation (MANDATORY)
+After the gateway restarts and the session reconnects, **immediately confirm to the user**:
+
+```
+✅ Gateway is back. Config changes applied successfully.
+
+What changed:
+- Compaction trigger: {old} → {new} (compacts earlier, smaller summaries)
+- Pruning TTL: {old} → {new} (clears stale tool output sooner)
+- [etc.]
+
+Rollback doc: {path}
+Backup: {path}
+
+Everything is working normally. Ready to continue.
+```
+
+**Never stay silent after a restart.** The user needs to know:
+1. We're back
+2. The changes landed
+3. Where to find the rollback doc
+4. That we're ready to continue
+
 ## OpenClaw Config Tuning
 
-For users who want to tune their context behaviour, read `references/config-guide.md`.
+For detailed config options and profiles, read `references/config-guide.md`.
 
 ## Operation Cost Reference
 
