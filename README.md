@@ -2,6 +2,8 @@
 
 Research, analysis, and tooling for AI agent context window management.
 
+> **How do skills work?** Skills are automatic. You install them into your OpenClaw workspace and forget about them. The agent reads each skill's description every turn (~80 tokens) and loads the full instructions only when the situation matches. You never invoke a skill manually — the agent recognises when it applies and follows the procedures inside. Think of them as operational habits the agent picks up, not commands you run.
+
 **The problem:** Long-running AI agent sessions fill their context window, trigger compaction, lose thread, and productivity collapses. Compaction barely moves the dial. Users have no visibility into what's eating their tokens. Sub-agent spawning is ad-hoc. There's no playbook.
 
 **This repo captures:** Everything we've learned running a 24/7 AI agent (OpenClaw on Claude Opus, 200k context window) across weeks of continuous platform engineering work. Real numbers, real pain points, real analysis.
