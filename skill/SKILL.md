@@ -200,7 +200,21 @@ Estimated runway: ~{time_or_calls} before next compression.
 
 Lead with what's already right (builds confidence), then highlight what needs changing and why. Keep it short — the user wants a verdict, not a lecture.
 
-If the user agrees to changes, apply following the procedure below.
+If changes are recommended, tell the user up front what applying them involves:
+- How many settings change
+- That it requires a gateway restart (~2-3 second pause, auto-reconnects)
+- That a backup and rollback doc will be created first
+
+Example closing:
+```
+One change recommended. Applying it means: backup of the config file, 
+a gateway restart (~2-3 second pause while it reloads), and a rollback 
+doc written to /tmp in case you want to undo it. Want me to go ahead?
+```
+
+Never ask "want me to apply?" without explaining what "apply" means. The user decides with full information, not blind trust.
+
+If the user agrees, follow the full procedure below.
 
 ### Step 4: Learn Over Time
 
