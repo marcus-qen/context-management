@@ -184,23 +184,23 @@ Additional tips:
 
 ### Step 3: Report
 
-Format recommendation in plain language:
+Use a compact list format — tables render poorly on mobile and narrow chat windows. For each setting, show current vs recommended only if they differ. Skip settings that are already correct.
 
 ```
 📊 Session Profile: {pattern}
-  Context: {pct}% ({used}k/{total}k)
-  Tool calls: ~{n} | Messages: ~{m} | Compressions so far: {c}
+Context: {pct}% ({used}k/{total}k) · Compressions: {c}
 
-  Recommended settings for this work style:
-    When to compress: {value} (currently: {current}) — {what this means}
-    Clear old output after: {value} (currently: {current}) — {what this means}
-    Protect last: {value} exchanges (currently: {current})
-    Trim output above: {value} chars (currently: {current})
+✅ When to compress — {current_description}. Good for this work style.
+✅ Clear old output after — {current_description}. No change needed.
+⚠️ Protect last exchanges — currently {current}, recommend {recommended}. {why}
+✅ Trim output above — {current_description}. No change needed.
 
-  {specific_advice in plain language}
+Estimated runway: ~{time_or_calls} before next compression.
 ```
 
-If the user agrees, apply changes following the procedure below.
+Lead with what's already right (builds confidence), then highlight what needs changing and why. Keep it short — the user wants a verdict, not a lecture.
+
+If the user agrees to changes, apply following the procedure below.
 
 ### Step 4: Learn Over Time
 
